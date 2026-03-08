@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.10)
+project(mbrot)
+
+set(CMAKE_CXX_STANDART 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+find_package(OpenGL REQUIRED)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+find_package(GLEW 2.0 REQUIRED)
+add_compile_definitions(GLEW_STATIC)
+
+set(SOURCES
+    main.cpp)
+
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+add_subdirectory(ext/glfw)
+
+target_include_directories(${PROJECT_NAME}
+    PUBLIC ext/glfw/include
+)
+
+target_link_directories(${PROJECT_NAME}
+    PRIVATE glew
+    PRIVATE glfw
+)
+
+target_link_libraries(${PROJECT_NAME}
+    OpenGL::GL
+    GLEW::GLEW
+    glfw
+)
