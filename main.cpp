@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cmath>
 #include <complex>
 #include <iostream>
 #include <thread>
@@ -7,19 +8,24 @@
 
 #include "GLFW/glfw3.h"
 
-inline void glfw_error_callback(int error, const char *description) { std::cout << description << std::endl; }
+typedef unsigned char uc;
 
 #define MAX_ITERS 100
 #define THRESHOLD 3
 #define WIDTH 1080
 #define HEIGHT 1080
 
+const uc gradient_col1[3] = {0, 0, 40};
+const uc gradient_col2[3] = {200, 50, 0};
+
+inline void glfw_error_callback(int error, const char *description) { std::cout << description << std::endl; }
+
 inline int simulate_point(std::complex<double> c) {
 	int iters = 0;
 
 	std::complex<double> z = 0;
 
-	while (abs(z) < THRESHOLD && iters < MAX_ITERS) {
+	while ((z.imag() * z.imag() + z.real() * z.real()) < THRESHOLD * THRESHOLD && iters < MAX_ITERS) {
 		z = z * z + c;
 		iters++;
 	}
@@ -30,17 +36,60 @@ inline int simulate_point(std::complex<double> c) {
 	return iters;
 }
 
-inline unsigned char *simulate(std::complex<double> origin) {
-	unsigned char *array = (unsigned char *)malloc(HEIGHT * WIDTH * 3 * sizeof(char));
+inline int *simulate(std::complex<double> origin) {
+	int *array = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
 
 	for (int i = 0; i < HEIGHT; i++)
 		for (int j = 0; j < WIDTH; j++) {
-			int ret = simulate_point(origin + std::complex<double>((double)i / HEIGHT, (double)j / WIDTH) * 5.0);
-
-			array[i * WIDTH * 3 + j * 3 + 2] = (unsigned char)(ret * 5);
+			array[i * WIDTH + j] =
+			    simulate_point(origin + std::complex<double>((double)i / HEIGHT, (double)j / WIDTH) * 0.25);
 		}
 
 	return array;
+}
+
+inline uc *get_gradient(int iters, int maxiter) {
+
+	uc *res = (uc *)malloc(3 * sizeof(uc));
+
+	double part = (double)iters / maxiter;
+
+	for (int i = 0; i < 3; i++) {
+		res[i] = gradient_col1[i] + part * (gradient_col2[i] - gradient_col1[i]);
+	}
+
+	return res;
+}
+
+inline uc *apply_color(int *array) {
+	uc *color_array = (uc *)malloc(WIDTH * HEIGHT * 3 * sizeof(uc));
+
+	int maxiter = 0;
+
+	for (int i = 0; i < HEIGHT; i++) {
+		for (int j = 0; j < WIDTH; j++) {
+			maxiter = std::max(maxiter, array[i * WIDTH + j]);
+		}
+	}
+
+	for (int i = 0; i < HEIGHT; i++) {
+		for (int j = 0; j < WIDTH; j++) {
+			if (array[i * WIDTH + j] == 0) {
+				for (int o = 0; o < 3; o++) {
+					color_array[i * WIDTH * 3 + j * 3 + o] = 0;
+				}
+				continue;
+			}
+
+			uc *res = get_gradient(array[i * WIDTH + j], maxiter);
+			for (int o = 0; o < 3; o++) {
+				color_array[i * WIDTH * 3 + j * 3 + o] = res[o];
+			}
+			free(res);
+		}
+	}
+
+	return color_array;
 }
 
 int main() {
@@ -99,22 +148,34 @@ int main() {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
+	bool need_redraw = true;
+
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glClearColor(0.f, 0.f, 0.f, 1.f);
 
-		auto *array = simulate(std::complex<double>(-3.0, -2.5));
-		glBindTexture(GL_TEXTURE_2D, tex);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, array);
-		free(array);
+		if (need_redraw) {
+
+			int *array = simulate(std::complex<double>(-0.5, -0.8));
+			uc *color_array = apply_color(array);
+
+			glBindTexture(GL_TEXTURE_2D, tex);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, color_array);
+			glBindTexture(GL_TEXTURE_2D, 0);
+
+			free(array);
+			free(color_array);
+
+			need_redraw = false;
+		}
 
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 		glBlitFramebuffer(0, 0, WIDTH, HEIGHT, 0, HEIGHT, WIDTH, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 		glfwSwapBuffers(window);
 	}
