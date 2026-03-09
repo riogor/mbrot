@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstring>
 #include <iostream>
 #include <thread>
 
@@ -10,22 +11,27 @@
 
 typedef unsigned char uc;
 
-#define MAX_ITERS 100
-#define THRESHOLD 2
-#define WIDTH 1080
-#define HEIGHT 1080
+constexpr int MAX_ITERS = 100;
+constexpr int MAGNITUDE_THRESHOLD = 100;
 
-const uc gradient_col1[3] = {0, 0, 40};
-const uc gradient_col2[3] = {200, 50, 0};
+constexpr uc gradient_col1[3] = {0, 0, 40};
+constexpr uc gradient_col2[3] = {200, 50, 0};
+
+int WIDTH = 1080;
+int HEIGHT = 1080;
+double SCALE = 0.25;
+double ORIGIN_X = -0.5;
+double ORIGIN_Y = -0.8;
+
+bool need_redraw = true;
 
 inline void glfw_error_callback(int error, const char *description) { std::cout << description << std::endl; }
 
-inline int simulate_point(double cx, double cy) {
+inline int simulate_point(const double cx, const double cy) {
 	int iters = 0;
-
 	double zx = 0, zy = 0, zx2 = 0, zy2 = 0;
 
-	while (zx2 + zy2 < THRESHOLD * THRESHOLD && iters < MAX_ITERS) {
+	while (zx2 + zy2 < MAGNITUDE_THRESHOLD * MAGNITUDE_THRESHOLD && iters < MAX_ITERS) {
 
 		zx2 = zx * zx;
 		zy2 = zy * zy;
@@ -42,32 +48,32 @@ inline int simulate_point(double cx, double cy) {
 	return iters;
 }
 
-inline int *simulate(double cx, double cy) {
+inline int *simulate(const double cx, const double cy) {
 	int *array = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
 
 	for (int i = 0; i < HEIGHT; i++)
 		for (int j = 0; j < WIDTH; j++) {
-			array[i * WIDTH + j] = simulate_point(cx + 0.25 * i / HEIGHT, cy + 0.25 * j / WIDTH);
+			array[i * WIDTH + j] = simulate_point(cx + SCALE * i / HEIGHT, cy + SCALE * j / WIDTH);
 		}
 
 	return array;
 }
 
-inline uc *get_gradient(int iters, int maxiter) {
+inline void apply_color_to_cell(uc *cell, const int iters, const int maxiter) {
 
-	uc *res = (uc *)malloc(3 * sizeof(uc));
+	if (iters == 0)
+		return;
 
 	double part = (double)iters / maxiter;
 
 	for (int i = 0; i < 3; i++) {
-		res[i] = gradient_col1[i] + part * (gradient_col2[i] - gradient_col1[i]);
+		cell[i] = (uc)(gradient_col1[i] + part * (gradient_col2[i] - gradient_col1[i]));
 	}
-
-	return res;
 }
 
-inline uc *apply_color(int *array) {
+inline uc *apply_color(const int *array) {
 	uc *color_array = (uc *)malloc(WIDTH * HEIGHT * 3 * sizeof(uc));
+	std::memset(color_array, 0, WIDTH * HEIGHT * 3 * sizeof(uc));
 
 	int maxiter = 0;
 
@@ -79,18 +85,7 @@ inline uc *apply_color(int *array) {
 
 	for (int i = 0; i < HEIGHT; i++) {
 		for (int j = 0; j < WIDTH; j++) {
-			if (array[i * WIDTH + j] == 0) {
-				for (int o = 0; o < 3; o++) {
-					color_array[i * WIDTH * 3 + j * 3 + o] = 0;
-				}
-				continue;
-			}
-
-			uc *res = get_gradient(array[i * WIDTH + j], maxiter);
-			for (int o = 0; o < 3; o++) {
-				color_array[i * WIDTH * 3 + j * 3 + o] = res[o];
-			}
-			free(res);
+			apply_color_to_cell(color_array + i * WIDTH * 3 + j * 3, array[i * WIDTH + j], maxiter);
 		}
 	}
 
@@ -158,8 +153,6 @@ int main() {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	bool need_redraw = true;
-
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
@@ -168,13 +161,13 @@ int main() {
 
 		if (need_redraw) {
 
-			// auto start = std::chrono::high_resolution_clock::now();
+			auto start = std::chrono::high_resolution_clock::now();
 
-			int *array = simulate(-0.5, -0.8);
+			int *array = simulate(ORIGIN_X, ORIGIN_Y);
 			uc *color_array = apply_color(array);
 
-			// auto end = std::chrono::high_resolution_clock::now();
-			// std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << std::endl;
+			auto end = std::chrono::high_resolution_clock::now();
+			std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << std::endl;
 
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, color_array);
