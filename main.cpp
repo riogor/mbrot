@@ -11,7 +11,7 @@
 typedef unsigned char uc;
 
 #define MAX_ITERS 100
-#define THRESHOLD 3
+#define THRESHOLD 2
 #define WIDTH 1080
 #define HEIGHT 1080
 
@@ -20,13 +20,19 @@ const uc gradient_col2[3] = {200, 50, 0};
 
 inline void glfw_error_callback(int error, const char *description) { std::cout << description << std::endl; }
 
-inline int simulate_point(std::complex<double> c) {
+inline int simulate_point(double cx, double cy) {
 	int iters = 0;
 
-	std::complex<double> z = 0;
+	double zx = 0, zy = 0, zx2 = 0, zy2 = 0;
 
-	while ((z.imag() * z.imag() + z.real() * z.real()) < THRESHOLD * THRESHOLD && iters < MAX_ITERS) {
-		z = z * z + c;
+	while (zx2 + zy2 < THRESHOLD * THRESHOLD && iters < MAX_ITERS) {
+
+		zx2 = zx * zx;
+		zy2 = zy * zy;
+
+		zy = 2.0 * zx * zy + cy;
+		zx = zx2 - zy2 + cx;
+
 		iters++;
 	}
 
@@ -36,13 +42,12 @@ inline int simulate_point(std::complex<double> c) {
 	return iters;
 }
 
-inline int *simulate(std::complex<double> origin) {
+inline int *simulate(double cx, double cy) {
 	int *array = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
 
 	for (int i = 0; i < HEIGHT; i++)
 		for (int j = 0; j < WIDTH; j++) {
-			array[i * WIDTH + j] =
-			    simulate_point(origin + std::complex<double>((double)i / HEIGHT, (double)j / WIDTH) * 0.25);
+			array[i * WIDTH + j] = simulate_point(cx + 0.25 * i / HEIGHT, cy + 0.25 * j / WIDTH);
 		}
 
 	return array;
@@ -93,43 +98,49 @@ inline uc *apply_color(int *array) {
 }
 
 int main() {
-	glfwSetErrorCallback(glfw_error_callback);
 
-	if (!glfwInit())
-		return 1;
-
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	GLFWwindow *window = glfwCreateWindow(WIDTH, HEIGHT, "mbrot", NULL, NULL);
-	if (!window) {
-		glfwTerminate();
-		return 2;
-	}
-	glfwMakeContextCurrent(window);
-
-	int version = gladLoadGL(glfwGetProcAddress);
-	if (version == 0) {
-		return 3;
-	}
-
-	glfwSwapInterval(1);
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	GLuint tex;
-	glGenTextures(1, &tex);
+	GLFWwindow *window = nullptr;
+	GLuint tex = 0;
+	GLuint fbo = 0;
 
 	{
+		glfwSetErrorCallback(glfw_error_callback);
+
+		if (!glfwInit())
+			return 1;
+
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+		window = glfwCreateWindow(WIDTH, HEIGHT, "mbrot", NULL, NULL);
+		if (!window) {
+			glfwTerminate();
+			return 2;
+		}
+		glfwMakeContextCurrent(window);
+
+		int version = gladLoadGL(glfwGetProcAddress);
+		if (version == 0) {
+			return 3;
+		}
+
+		glfwSwapInterval(1);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	}
+
+	{
+		glGenTextures(1, &tex);
+
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WIDTH, HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-		float borderColor[] = {0.0f, 0.0f, 0.0f, 1.0f};
+		float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -138,10 +149,9 @@ int main() {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-
 	{
+		glGenFramebuffers(1, &fbo);
+
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 
@@ -158,8 +168,13 @@ int main() {
 
 		if (need_redraw) {
 
-			int *array = simulate(std::complex<double>(-0.5, -0.8));
+			// auto start = std::chrono::high_resolution_clock::now();
+
+			int *array = simulate(-0.5, -0.8);
 			uc *color_array = apply_color(array);
+
+			// auto end = std::chrono::high_resolution_clock::now();
+			// std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << std::endl;
 
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, color_array);

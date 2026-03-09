@@ -4,6 +4,7 @@ project(mbrot)
 set(CMAKE_CXX_STANDART 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+
 find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -43,4 +44,5 @@ target_link_libraries(${PROJECT_NAME}
     OpenGL::EGL
 )
 
+target_compile_options(${PROJECT_NAME} PUBLIC -O3 -Ofast -march=native -funroll-loops)
 set(OpenGL_GL_PREFERENCE GLVND)
